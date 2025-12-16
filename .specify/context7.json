@@ -1,0 +1,46 @@
+{
+  "name": "physical-ai-humanoid-book",
+  "type": "docusaurus",
+  "root": "docs",
+  "docs_path": "website/docs",
+  "include": [
+    "docs/intro",
+    "docs/module-1-ros2",
+    "docs/module-2-digital-twin",
+    "docs/module-3-isaac",
+    "docs/module-4-vla",
+    "docs/capstone",
+    "docs/appendices",
+    "docs/conclusion",
+    "website/docs/intro",
+    "website/docs/module-1-ros2",
+    "website/docs/module-2-digital-twin",
+    "website/docs/module-3-isaac",
+    "website/docs/module-4-vla",
+    "website/docs/capstone",
+    "website/docs/appendices",
+    "website/docs/conclusion"
+  ],
+  "skills": [
+    {
+      "name": "ros2-teaching",
+      "path": ".claude/skills/ros2-teaching"
+    },
+    {
+      "name": "digital-twin-visualization",
+      "path": ".claude/skills/digital-twin-visualization"
+    },
+    {
+      "name": "isaac-sim-guidance",
+      "path": ".claude/skills/isaac-sim-guidance"
+    },
+    {
+      "name": "vla-reasoning",
+      "path": ".claude/skills/vla-reasoning"
+    },
+    {
+      "name": "capstone-mentor",
+      "path": ".claude/skills/capstone-mentor"
+    }
+  ]
+}

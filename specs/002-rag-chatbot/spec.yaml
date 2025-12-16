@@ -1,0 +1,1020 @@
+# =============================================================================
+# RAG Chatbot Specification for Docusaurus Book
+# =============================================================================
+# Feature: Retrieval-Augmented Generation Chatbot
+# Branch: 002-rag-chatbot
+# Created: 2025-12-16
+# Status: Draft
+# Spec-Kit Plus Compatible: v1.0
+# =============================================================================
+
+metadata:
+  feature_name: "RAG Book Chatbot"
+  feature_id: "002-rag-chatbot"
+  version: "1.0.0"
+  created: "2025-12-16"
+  status: "draft"
+  authors:
+    - name: "AI Engineer"
+      role: "Specification Author"
+  tags:
+    - rag
+    - chatbot
+    - docusaurus
+    - fastapi
+    - qdrant
+    - neon-postgres
+
+# =============================================================================
+# OVERVIEW
+# =============================================================================
+
+overview:
+  description: |
+    A Retrieval-Augmented Generation (RAG) chatbot embedded in a Docusaurus-hosted
+    book that answers questions exclusively from the book's content. The chatbot
+    supports contextual queries based on user-selected text within the book.
+
+  objectives:
+    - Provide accurate answers derived solely from book content
+    - Enable context-aware responses based on user text selection
+    - Deliver fast, relevant paragraph retrieval using vector similarity
+    - Maintain zero external knowledge contamination
+    - Operate within free-tier infrastructure constraints
+
+  scope:
+    in_scope:
+      - Book content indexing and embedding generation
+      - Real-time question answering from book paragraphs
+      - Text selection-based contextual queries
+      - Chat history within session (not persisted)
+      - Docusaurus integration via React component
+      - FastAPI backend with agent orchestration
+
+    out_of_scope:
+      - Multi-book or external knowledge queries
+      - Persistent chat history across sessions
+      - User authentication and personalization
+      - Real-time content updates (batch indexing only)
+      - Multi-language support (English only)
+      - Voice input/output
+
+# =============================================================================
+# INFRASTRUCTURE
+# =============================================================================
+
+infrastructure:
+  backend:
+    framework: "FastAPI"
+    runtime: "Python 3.11+"
+    deployment:
+      platform: "Railway / Render (free tier)"
+      containerization: "Docker"
+
+  database:
+    primary:
+      name: "Neon Serverless Postgres"
+      tier: "Free"
+      purpose: "Chat session metadata, content chunks metadata, analytics"
+      limits:
+        storage: "512 MB"
+        compute_hours: "191.9 hours/month"
+        branches: 10
+      connection: "Pooled connection (serverless driver)"
+
+    vector_store:
+      name: "Qdrant Cloud"
+      tier: "Free"
+      purpose: "Vector embeddings storage and similarity search"
+      limits:
+        vectors: "1M vectors"
+        collections: "unlimited"
+        dimensions: "up to 65535"
+      features:
+        - "Cosine similarity"
+        - "Payload filtering"
+        - "HNSW indexing"
+
+  embedding_model:
+    provider: "HuggingFace"
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    dimensions: 384
+    license: "Apache 2.0 (free)"
+    hosting: "Local inference (CPU-compatible)"
+
+  llm:
+    provider: "Groq"
+    model: "llama-3.1-8b-instant"
+    tier: "Free"
+    limits:
+      requests_per_minute: 30
+      tokens_per_minute: 14400
+    alternatives:
+      - provider: "Together.ai"
+        model: "meta-llama/Llama-3-8b-chat-hf"
+        tier: "Free trial"
+      - provider: "Ollama"
+        model: "llama3.1:8b"
+        tier: "Self-hosted (free)"
+
+  frontend:
+    framework: "React"
+    integration: "Docusaurus plugin/theme component"
+    styling: "CSS Modules / Tailwind"
+
+# =============================================================================
+# AGENTS
+# =============================================================================
+
+agents:
+  content_agent:
+    name: "ContentAgent"
+    description: |
+      Handles all book content-related queries. Responsible for understanding
+      user questions, orchestrating retrieval of relevant paragraphs, and
+      generating accurate, sourced responses.
+
+    responsibilities:
+      - Parse and understand user queries about book content
+      - Determine optimal retrieval strategy (semantic vs. keyword)
+      - Orchestrate RAGRetriever tool for paragraph fetching
+      - Synthesize retrieved content into coherent answers
+      - Cite sources with chapter and section references
+      - Detect and reject out-of-scope queries
+
+    inputs:
+      - name: "query"
+        type: "string"
+        description: "User's question about book content"
+        required: true
+      - name: "context"
+        type: "string"
+        description: "Selected text from book (optional)"
+        required: false
+      - name: "chat_history"
+        type: "array"
+        description: "Previous messages in conversation"
+        required: false
+
+    outputs:
+      - name: "response"
+        type: "object"
+        schema:
+          answer: "string"
+          sources:
+            type: "array"
+            items:
+              chapter: "string"
+              section: "string"
+              page_ref: "string"
+              relevance_score: "float"
+          confidence: "float"
+          is_from_book: "boolean"
+
+    tools_used:
+      - "RAGRetriever"
+      - "TextEmbedder"
+
+    constraints:
+      - "MUST only answer from book content"
+      - "MUST cite sources for all factual claims"
+      - "MUST decline queries outside book scope with helpful redirect"
+      - "Response latency < 3 seconds (p95)"
+
+    prompts:
+      system: |
+        You are a knowledgeable assistant for the Physical AI & Humanoid Robotics book.
+
+        CONSTRAINTS:
+        - ONLY answer questions using information from the retrieved book content
+        - NEVER use external knowledge or make assumptions
+        - ALWAYS cite the chapter and section for your answers
+        - If the retrieved content doesn't contain the answer, say so clearly
+        - Keep responses concise and technically accurate
+
+        FORMAT:
+        - Start with a direct answer
+        - Provide supporting details from the book
+        - End with source citations
+
+      query_rewrite: |
+        Given the user's question and optional selected context, rewrite the query
+        to optimize for semantic search retrieval:
+
+        Original question: {query}
+        Selected context: {context}
+
+        Provide a search-optimized query that captures the core information need.
+
+  user_agent:
+    name: "UserAgent"
+    description: |
+      Handles all user interaction management. Responsible for conversation flow,
+      intent classification, session management, and routing to ContentAgent.
+
+    responsibilities:
+      - Classify user intent (question, clarification, feedback)
+      - Manage conversation state and context
+      - Handle text selection events from frontend
+      - Route content queries to ContentAgent
+      - Handle non-content interactions (greetings, help, errors)
+      - Track conversation metrics
+
+    inputs:
+      - name: "message"
+        type: "string"
+        description: "Raw user input message"
+        required: true
+      - name: "selected_text"
+        type: "string"
+        description: "Text selected by user in the book"
+        required: false
+      - name: "session_id"
+        type: "string"
+        description: "Unique session identifier"
+        required: true
+      - name: "metadata"
+        type: "object"
+        description: "Additional context (current page, section)"
+        required: false
+
+    outputs:
+      - name: "response"
+        type: "object"
+        schema:
+          message: "string"
+          intent: "string"
+          routed_to: "string | null"
+          session_updated: "boolean"
+
+    tools_used: []
+
+    intents:
+      - name: "content_query"
+        description: "Question about book content"
+        route_to: "ContentAgent"
+        examples:
+          - "What is a digital twin?"
+          - "Explain ROS2 nodes"
+          - "How does inverse kinematics work?"
+
+      - name: "selection_query"
+        description: "Question about selected text"
+        route_to: "ContentAgent"
+        requires: "selected_text"
+        examples:
+          - "Explain this in simpler terms"
+          - "What does this equation mean?"
+          - "Give me an example of this concept"
+
+      - name: "clarification"
+        description: "Follow-up or clarification request"
+        route_to: "ContentAgent"
+        requires: "chat_history"
+        examples:
+          - "Can you elaborate on that?"
+          - "What do you mean by..."
+          - "Tell me more"
+
+      - name: "greeting"
+        description: "Social greeting"
+        route_to: null
+        response: "Hello! I'm here to help you understand the Physical AI & Humanoid Robotics book. Ask me anything about the content!"
+
+      - name: "help"
+        description: "Request for usage help"
+        route_to: null
+        response: |
+          I can help you with:
+          - Answering questions about book content
+          - Explaining selected text passages
+          - Finding related topics in the book
+
+          Try selecting text and asking "explain this" or ask a direct question!
+
+      - name: "out_of_scope"
+        description: "Query outside book content"
+        route_to: null
+        response: "I can only answer questions about the Physical AI & Humanoid Robotics book. Could you rephrase your question to relate to the book's topics?"
+
+    constraints:
+      - "MUST maintain session state accurately"
+      - "MUST classify intent before routing"
+      - "MUST handle edge cases gracefully (empty input, gibberish)"
+      - "Session timeout: 30 minutes of inactivity"
+
+# =============================================================================
+# TOOLS
+# =============================================================================
+
+tools:
+  rag_retriever:
+    name: "RAGRetriever"
+    description: |
+      Fetches relevant book paragraphs based on semantic similarity to the query.
+      Uses Qdrant vector store for similarity search and returns ranked results.
+
+    interface:
+      function_name: "retrieve_relevant_chunks"
+
+      parameters:
+        - name: "query_embedding"
+          type: "list[float]"
+          description: "384-dimensional embedding vector"
+          required: true
+
+        - name: "top_k"
+          type: "int"
+          description: "Number of results to return"
+          default: 5
+          min: 1
+          max: 20
+
+        - name: "score_threshold"
+          type: "float"
+          description: "Minimum similarity score (0-1)"
+          default: 0.7
+          min: 0.0
+          max: 1.0
+
+        - name: "filters"
+          type: "object"
+          description: "Qdrant payload filters"
+          required: false
+          schema:
+            chapter: "string | null"
+            section: "string | null"
+            content_type: "string | null"  # paragraph, code, equation
+
+      returns:
+        type: "list[RetrievedChunk]"
+        schema:
+          RetrievedChunk:
+            id: "string"
+            content: "string"
+            score: "float"
+            metadata:
+              chapter: "string"
+              section: "string"
+              page_ref: "string"
+              content_type: "string"
+              word_count: "int"
+
+    implementation:
+      vector_store: "Qdrant"
+      collection_name: "book_chunks"
+      distance_metric: "Cosine"
+      index_type: "HNSW"
+      hnsw_config:
+        m: 16
+        ef_construct: 100
+
+    error_handling:
+      - error: "QdrantConnectionError"
+        action: "Retry with exponential backoff (max 3 attempts)"
+      - error: "EmptyResultsError"
+        action: "Return empty list with warning, lower threshold and retry"
+      - error: "InvalidEmbeddingError"
+        action: "Reject request with validation error"
+
+  text_embedder:
+    name: "TextEmbedder"
+    description: |
+      Converts text to vector embeddings using sentence-transformers model.
+      Handles both single texts and batch processing for indexing.
+
+    interface:
+      function_name: "generate_embedding"
+
+      parameters:
+        - name: "text"
+          type: "string"
+          description: "Text to embed"
+          required: true
+          max_length: 512  # tokens, model limit
+
+        - name: "normalize"
+          type: "bool"
+          description: "Whether to L2-normalize the embedding"
+          default: true
+
+      returns:
+        type: "list[float]"
+        description: "384-dimensional normalized embedding vector"
+
+    batch_interface:
+      function_name: "generate_embeddings_batch"
+
+      parameters:
+        - name: "texts"
+          type: "list[string]"
+          description: "List of texts to embed"
+          required: true
+          max_items: 100
+
+        - name: "normalize"
+          type: "bool"
+          default: true
+
+      returns:
+        type: "list[list[float]]"
+        description: "List of 384-dimensional embedding vectors"
+
+    implementation:
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      framework: "sentence-transformers"
+      device: "cpu"  # Free tier compatible
+      max_seq_length: 256
+      pooling: "mean"
+
+    preprocessing:
+      - "Lowercase text"
+      - "Remove excessive whitespace"
+      - "Truncate to max_seq_length tokens"
+
+    error_handling:
+      - error: "TextTooLongError"
+        action: "Truncate with warning"
+      - error: "EmptyTextError"
+        action: "Reject with validation error"
+      - error: "ModelLoadError"
+        action: "Retry once, then fail with service unavailable"
+
+# =============================================================================
+# DATA MODEL
+# =============================================================================
+
+data_model:
+  neon_postgres:
+    tables:
+      - name: "content_chunks"
+        description: "Metadata for indexed book content"
+        columns:
+          - name: "id"
+            type: "UUID"
+            primary_key: true
+            default: "gen_random_uuid()"
+          - name: "chapter"
+            type: "VARCHAR(100)"
+            nullable: false
+            index: true
+          - name: "section"
+            type: "VARCHAR(200)"
+            nullable: false
+          - name: "page_ref"
+            type: "VARCHAR(50)"
+            nullable: true
+          - name: "content"
+            type: "TEXT"
+            nullable: false
+          - name: "content_type"
+            type: "VARCHAR(50)"
+            nullable: false
+            check: "content_type IN ('paragraph', 'code', 'equation', 'definition')"
+          - name: "word_count"
+            type: "INTEGER"
+            nullable: false
+          - name: "qdrant_point_id"
+            type: "VARCHAR(100)"
+            nullable: false
+            unique: true
+          - name: "created_at"
+            type: "TIMESTAMP WITH TIME ZONE"
+            default: "NOW()"
+          - name: "updated_at"
+            type: "TIMESTAMP WITH TIME ZONE"
+            default: "NOW()"
+
+      - name: "chat_sessions"
+        description: "Chat session tracking for analytics"
+        columns:
+          - name: "id"
+            type: "UUID"
+            primary_key: true
+          - name: "started_at"
+            type: "TIMESTAMP WITH TIME ZONE"
+            default: "NOW()"
+          - name: "last_activity"
+            type: "TIMESTAMP WITH TIME ZONE"
+            nullable: false
+          - name: "message_count"
+            type: "INTEGER"
+            default: 0
+          - name: "current_page"
+            type: "VARCHAR(200)"
+            nullable: true
+
+      - name: "query_logs"
+        description: "Query analytics for improving retrieval"
+        columns:
+          - name: "id"
+            type: "UUID"
+            primary_key: true
+            default: "gen_random_uuid()"
+          - name: "session_id"
+            type: "UUID"
+            foreign_key: "chat_sessions.id"
+          - name: "query_text"
+            type: "TEXT"
+            nullable: false
+          - name: "intent"
+            type: "VARCHAR(50)"
+            nullable: false
+          - name: "chunks_retrieved"
+            type: "INTEGER"
+            nullable: false
+          - name: "top_chunk_score"
+            type: "FLOAT"
+            nullable: true
+          - name: "response_time_ms"
+            type: "INTEGER"
+            nullable: false
+          - name: "created_at"
+            type: "TIMESTAMP WITH TIME ZONE"
+            default: "NOW()"
+
+  qdrant:
+    collections:
+      - name: "book_chunks"
+        vector_config:
+          size: 384
+          distance: "Cosine"
+        hnsw_config:
+          m: 16
+          ef_construct: 100
+          full_scan_threshold: 10000
+        payload_schema:
+          chunk_id: "keyword"
+          chapter: "keyword"
+          section: "keyword"
+          content_type: "keyword"
+          word_count: "integer"
+
+# =============================================================================
+# API CONTRACTS
+# =============================================================================
+
+api:
+  base_url: "/api/v1"
+
+  endpoints:
+    - path: "/chat"
+      method: "POST"
+      description: "Send a message to the chatbot"
+      request:
+        content_type: "application/json"
+        schema:
+          session_id:
+            type: "string"
+            format: "uuid"
+            required: true
+          message:
+            type: "string"
+            required: true
+            max_length: 1000
+          selected_text:
+            type: "string"
+            required: false
+            max_length: 2000
+          current_page:
+            type: "string"
+            required: false
+      response:
+        success:
+          status: 200
+          schema:
+            session_id: "string"
+            response:
+              answer: "string"
+              sources:
+                type: "array"
+                items:
+                  chapter: "string"
+                  section: "string"
+                  relevance_score: "number"
+              confidence: "number"
+            intent: "string"
+            processing_time_ms: "number"
+        errors:
+          - status: 400
+            description: "Invalid request body"
+          - status: 429
+            description: "Rate limit exceeded"
+          - status: 503
+            description: "Service temporarily unavailable"
+
+    - path: "/session"
+      method: "POST"
+      description: "Create a new chat session"
+      request:
+        content_type: "application/json"
+        schema:
+          initial_page:
+            type: "string"
+            required: false
+      response:
+        success:
+          status: 201
+          schema:
+            session_id: "string"
+            expires_at: "string"
+
+    - path: "/health"
+      method: "GET"
+      description: "Health check endpoint"
+      response:
+        success:
+          status: 200
+          schema:
+            status: "string"
+            version: "string"
+            dependencies:
+              neon: "string"
+              qdrant: "string"
+              embedding_model: "string"
+
+# =============================================================================
+# USER STORIES & ACCEPTANCE CRITERIA
+# =============================================================================
+
+user_stories:
+  - id: "US-001"
+    title: "Ask Question About Book Content"
+    priority: "P1"
+    description: |
+      As a reader of the Physical AI & Humanoid Robotics book,
+      I want to ask questions about concepts in the book,
+      So that I can better understand complex topics without leaving the reading experience.
+
+    why_priority: "Core functionality - without this, the chatbot has no value"
+
+    independent_test: |
+      Can be tested by asking "What is a digital twin?" and verifying the response
+      cites relevant book sections and contains accurate information.
+
+    acceptance_scenarios:
+      - given: "User is on any page of the book"
+        when: "User types 'What is ROS2?' in the chatbot"
+        then: "Chatbot returns a response with relevant book content and source citations"
+
+      - given: "User asks a question covered in Chapter 3"
+        when: "Response is generated"
+        then: "Sources include Chapter 3 references with relevance scores > 0.7"
+
+      - given: "User asks about a topic not in the book"
+        when: "Query is processed"
+        then: "Chatbot politely indicates the topic isn't covered and suggests related topics"
+
+  - id: "US-002"
+    title: "Explain Selected Text"
+    priority: "P1"
+    description: |
+      As a reader encountering difficult passages,
+      I want to select text and ask for explanations,
+      So that I can understand complex equations, code, or technical terms in context.
+
+    why_priority: "Key differentiator - enables contextual learning within the book"
+
+    independent_test: |
+      Can be tested by selecting a code snippet, asking "explain this",
+      and verifying the response explains the selected content specifically.
+
+    acceptance_scenarios:
+      - given: "User selects an equation in the book"
+        when: "User asks 'What does this mean?'"
+        then: "Chatbot explains the equation using surrounding book context"
+
+      - given: "User selects a code block"
+        when: "User asks 'Break this down for me'"
+        then: "Chatbot explains each part of the code with references to relevant book sections"
+
+      - given: "User selects text but asks unrelated question"
+        when: "Query is processed"
+        then: "Chatbot uses selection as context but answers the actual question"
+
+  - id: "US-003"
+    title: "Follow-up Questions"
+    priority: "P2"
+    description: |
+      As a reader in a learning conversation,
+      I want to ask follow-up questions without repeating context,
+      So that I can dive deeper into topics naturally.
+
+    why_priority: "Enhances usability but core functionality works without it"
+
+    independent_test: |
+      Can be tested by asking "What is inverse kinematics?", then asking
+      "How is it used in humanoids?" and verifying context is maintained.
+
+    acceptance_scenarios:
+      - given: "User asked about inverse kinematics"
+        when: "User asks 'Can you give me an example?'"
+        then: "Chatbot provides IK examples from the book without needing topic repetition"
+
+      - given: "Conversation has 5+ messages"
+        when: "User asks a follow-up"
+        then: "Response maintains context from relevant earlier messages"
+
+  - id: "US-004"
+    title: "Fast Response Times"
+    priority: "P2"
+    description: |
+      As a reader with limited patience,
+      I want responses within 3 seconds,
+      So that the chatbot doesn't interrupt my reading flow.
+
+    why_priority: "Critical for UX but can launch with slower performance initially"
+
+    independent_test: |
+      Can be tested by measuring p95 response time across 100 queries
+      and verifying < 3000ms.
+
+    acceptance_scenarios:
+      - given: "Normal system load"
+        when: "User submits a query"
+        then: "Response is returned within 3 seconds (p95)"
+
+      - given: "Cold start scenario"
+        when: "First query of a session"
+        then: "Response is returned within 5 seconds"
+
+# =============================================================================
+# EDGE CASES
+# =============================================================================
+
+edge_cases:
+  - scenario: "Empty or whitespace-only message"
+    expected_behavior: "Return helpful prompt to ask a question"
+
+  - scenario: "Very long query (>1000 chars)"
+    expected_behavior: "Truncate with warning and process"
+
+  - scenario: "Query in non-English language"
+    expected_behavior: "Respond in English, note language limitation"
+
+  - scenario: "Selected text is entire page"
+    expected_behavior: "Use first 500 chars as context, note truncation"
+
+  - scenario: "Qdrant service unavailable"
+    expected_behavior: "Return graceful error, suggest trying again"
+
+  - scenario: "LLM rate limit exceeded"
+    expected_behavior: "Queue request or return rate limit message with retry time"
+
+  - scenario: "Malicious prompt injection attempt"
+    expected_behavior: "Sanitize input, respond only from book content"
+
+  - scenario: "Session timeout after 30 minutes"
+    expected_behavior: "Create new session transparently, note fresh context"
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+
+requirements:
+  functional:
+    - id: "FR-001"
+      description: "System MUST answer questions using only indexed book content"
+      priority: "Must"
+
+    - id: "FR-002"
+      description: "System MUST support text selection as query context"
+      priority: "Must"
+
+    - id: "FR-003"
+      description: "System MUST cite sources (chapter, section) for all answers"
+      priority: "Must"
+
+    - id: "FR-004"
+      description: "System MUST maintain conversation context within a session"
+      priority: "Must"
+
+    - id: "FR-005"
+      description: "System MUST classify user intent before processing"
+      priority: "Must"
+
+    - id: "FR-006"
+      description: "System MUST gracefully handle out-of-scope queries"
+      priority: "Must"
+
+    - id: "FR-007"
+      description: "System SHOULD provide relevance scores for retrieved content"
+      priority: "Should"
+
+    - id: "FR-008"
+      description: "System SHOULD log queries for analytics"
+      priority: "Should"
+
+  non_functional:
+    - id: "NFR-001"
+      category: "Performance"
+      description: "Response latency < 3 seconds (p95)"
+      metric: "p95_latency_ms < 3000"
+
+    - id: "NFR-002"
+      category: "Performance"
+      description: "Support 10 concurrent users"
+      metric: "concurrent_users >= 10"
+
+    - id: "NFR-003"
+      category: "Availability"
+      description: "99% uptime during business hours"
+      metric: "uptime_percentage >= 99"
+
+    - id: "NFR-004"
+      category: "Cost"
+      description: "Operate within free tier limits"
+      metric: "monthly_cost = $0"
+
+    - id: "NFR-005"
+      category: "Security"
+      description: "Sanitize all user inputs"
+      metric: "injection_attempts_blocked = 100%"
+
+    - id: "NFR-006"
+      category: "Accuracy"
+      description: "Retrieval relevance > 0.7 for top result"
+      metric: "avg_top_relevance_score >= 0.7"
+
+# =============================================================================
+# SUCCESS CRITERIA
+# =============================================================================
+
+success_criteria:
+  measurable_outcomes:
+    - id: "SC-001"
+      metric: "Users can get accurate answers to book-related questions"
+      measurement: "Manual review: 90% of answers are factually correct per book content"
+
+    - id: "SC-002"
+      metric: "Text selection feature works reliably"
+      measurement: "95% of selection-based queries use selection as context"
+
+    - id: "SC-003"
+      metric: "Response times meet targets"
+      measurement: "p95 latency < 3000ms measured over 7-day period"
+
+    - id: "SC-004"
+      metric: "System operates within free tier"
+      measurement: "Zero charges on Neon, Qdrant, and LLM provider accounts"
+
+    - id: "SC-005"
+      metric: "No external knowledge leakage"
+      measurement: "100% of tested responses cite book sources"
+
+# =============================================================================
+# TECHNICAL CONSTRAINTS
+# =============================================================================
+
+constraints:
+  infrastructure:
+    - "Neon Postgres: 512 MB storage, 191.9 compute hours/month"
+    - "Qdrant Free: 1M vectors max"
+    - "Groq Free: 30 req/min, 14400 tokens/min"
+    - "No GPU required (CPU inference for embeddings)"
+
+  security:
+    - "No user authentication required"
+    - "No PII storage"
+    - "Input sanitization mandatory"
+    - "CORS restricted to book domain"
+
+  compliance:
+    - "All content derived from owned book content only"
+    - "Open source models only (Apache 2.0 compatible)"
+    - "No external API calls except Groq/Qdrant/Neon"
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+dependencies:
+  external_services:
+    - name: "Neon Serverless Postgres"
+      type: "Database"
+      criticality: "High"
+      fallback: "None (core dependency)"
+
+    - name: "Qdrant Cloud"
+      type: "Vector Store"
+      criticality: "High"
+      fallback: "ChromaDB local (degraded mode)"
+
+    - name: "Groq API"
+      type: "LLM Provider"
+      criticality: "High"
+      fallback: "Ollama local (self-hosted)"
+
+  python_packages:
+    - name: "fastapi"
+      version: ">=0.109.0"
+    - name: "uvicorn"
+      version: ">=0.27.0"
+    - name: "qdrant-client"
+      version: ">=1.7.0"
+    - name: "sentence-transformers"
+      version: ">=2.3.0"
+    - name: "psycopg[binary]"
+      version: ">=3.1.0"
+    - name: "groq"
+      version: ">=0.4.0"
+    - name: "pydantic"
+      version: ">=2.5.0"
+    - name: "python-dotenv"
+      version: ">=1.0.0"
+
+  frontend_packages:
+    - name: "@docusaurus/core"
+      version: ">=3.0.0"
+    - name: "react"
+      version: ">=18.0.0"
+
+# =============================================================================
+# RISKS & MITIGATIONS
+# =============================================================================
+
+risks:
+  - id: "RISK-001"
+    description: "Free tier rate limits may be insufficient for traffic spikes"
+    probability: "Medium"
+    impact: "Medium"
+    mitigation: "Implement request queuing and graceful degradation"
+
+  - id: "RISK-002"
+    description: "LLM may hallucinate despite RAG constraints"
+    probability: "Low"
+    impact: "High"
+    mitigation: "Strict prompting, source citation requirement, confidence thresholds"
+
+  - id: "RISK-003"
+    description: "Embedding model quality may affect retrieval accuracy"
+    probability: "Medium"
+    impact: "Medium"
+    mitigation: "Chunk overlap, multiple retrieval strategies, threshold tuning"
+
+  - id: "RISK-004"
+    description: "Cold start latency for serverless components"
+    probability: "High"
+    impact: "Low"
+    mitigation: "Connection pooling, warm-up endpoints, user feedback on first query"
+
+# =============================================================================
+# IMPLEMENTATION PHASES
+# =============================================================================
+
+phases:
+  - phase: 1
+    name: "Core RAG Pipeline"
+    deliverables:
+      - "Book content chunking and indexing script"
+      - "TextEmbedder tool implementation"
+      - "Qdrant collection setup"
+      - "RAGRetriever tool implementation"
+      - "Basic FastAPI endpoint for queries"
+
+  - phase: 2
+    name: "Agent Orchestration"
+    deliverables:
+      - "ContentAgent implementation"
+      - "UserAgent implementation"
+      - "Intent classification"
+      - "Conversation context management"
+      - "Neon Postgres schema and integration"
+
+  - phase: 3
+    name: "Frontend Integration"
+    deliverables:
+      - "Docusaurus chatbot component"
+      - "Text selection handler"
+      - "Chat UI with history"
+      - "Styling and responsiveness"
+
+  - phase: 4
+    name: "Polish & Deployment"
+    deliverables:
+      - "Error handling and edge cases"
+      - "Analytics dashboard basics"
+      - "Deployment to Railway/Render"
+      - "Documentation"
+
+# =============================================================================
+# APPENDIX: CHUNKING STRATEGY
+# =============================================================================
+
+appendix:
+  chunking_strategy:
+    method: "Semantic chunking with overlap"
+    chunk_size: 500  # words
+    chunk_overlap: 50  # words
+    split_on:
+      - "## " # H2 headers
+      - "### " # H3 headers
+      - "\n\n" # Paragraph breaks
+    preserve:
+      - "Code blocks as single chunks"
+      - "Equations with surrounding context"
+      - "Definitions with examples"
+    metadata_extraction:
+      - "Chapter from file path"
+      - "Section from nearest header"
+      - "Content type detection (paragraph/code/equation)"

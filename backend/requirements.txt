@@ -1,0 +1,48 @@
+# =============================================================================
+# RAG Chatbot Backend Dependencies
+# =============================================================================
+# Install with: pip install -r requirements.txt
+# For development: pip install -r requirements.txt -r requirements-dev.txt
+# =============================================================================
+
+# FastAPI Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Pydantic for validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Vector Store - Qdrant Cloud (Free Tier)
+qdrant-client>=1.7.0
+
+# Embeddings - Sentence Transformers (Free, Local)
+sentence-transformers>=2.3.0
+torch>=2.0.0  # CPU version is fine
+
+# Database - Neon Postgres (Free Tier)
+psycopg[binary]>=3.1.0
+
+# LLM Client - Groq (Free Tier)
+groq>=0.4.0
+
+# HTTP client for API calls
+httpx>=0.26.0
+
+# Async support
+anyio>=4.0.0
+
+# =============================================================================
+# Development Dependencies (optional)
+# =============================================================================
+# Uncomment for development:
+# pytest>=7.4.0
+# pytest-asyncio>=0.23.0
+# pytest-cov>=4.1.0
+# black>=23.0.0
+# ruff>=0.1.0
+# mypy>=1.8.0

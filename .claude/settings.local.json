@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(git fetch:*)",
+      "Bash(cat:*)",
+      "Bash(powershell -Command \"if (-not (Test-Path ''C:\\Users\\Narmeen\\Desktop\\physical-ai-and-humanoid-robotics-book\\docs\\module-2-digital-twin'')) { New-Item -ItemType Directory -Path ''C:\\Users\\Narmeen\\Desktop\\physical-ai-and-humanoid-robotics-book\\docs\\module-2-digital-twin'' -Force }\")",
+      "Bash(powershell -Command \"(Get-Content ''C:\\Users\\Narmeen\\Desktop\\physical-ai-and-humanoid-robotics-book\\docs\\module-2-digital-twin\\index.md'' | Measure-Object -Word).Words\")",
+      "Bash(powershell:*)",
+      "Bash(pip show:*)"
+    ]
+  }
+}

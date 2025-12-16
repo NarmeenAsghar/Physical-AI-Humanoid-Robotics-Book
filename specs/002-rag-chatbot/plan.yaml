@@ -1,0 +1,1201 @@
+# =============================================================================
+# RAG Chatbot Architectural Plan
+# =============================================================================
+# Feature: Retrieval-Augmented Generation Chatbot
+# Branch: 002-rag-chatbot
+# Created: 2025-12-16
+# Status: Draft
+# Spec Reference: specs/002-rag-chatbot/spec.yaml
+# Spec-Kit Plus Compatible: v1.0
+# =============================================================================
+
+metadata:
+  plan_name: "RAG Book Chatbot Implementation Plan"
+  feature_id: "002-rag-chatbot"
+  version: "1.0.0"
+  created: "2025-12-16"
+  status: "draft"
+  spec_reference: "specs/002-rag-chatbot/spec.yaml"
+  authors:
+    - name: "AI System Architect"
+      role: "Plan Author"
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+
+summary:
+  primary_requirement: |
+    Build a RAG chatbot embedded in a Docusaurus book that answers questions
+    exclusively from the book's content, supporting text selection context.
+
+  technical_approach: |
+    Multi-agent architecture with FastAPI backend, Qdrant vector store for
+    semantic search, Neon Postgres for metadata/analytics, and sentence-transformers
+    for local embedding generation. Frontend React component integrated into
+    Docusaurus theme.
+
+# =============================================================================
+# TECHNICAL CONTEXT
+# =============================================================================
+
+technical_context:
+  language_version: "Python 3.11+"
+  primary_dependencies:
+    - "FastAPI 0.109+"
+    - "sentence-transformers 2.3+"
+    - "qdrant-client 1.7+"
+    - "psycopg[binary] 3.1+"
+    - "groq 0.4+"
+    - "pydantic 2.5+"
+  storage:
+    primary: "Neon Serverless Postgres (Free Tier)"
+    vector: "Qdrant Cloud (Free Tier)"
+  testing: "pytest with pytest-asyncio"
+  target_platform: "Linux container (Railway/Render)"
+  project_type: "web"
+  performance_goals:
+    - "p95 latency < 3000ms"
+    - "10 concurrent users"
+    - "Embedding generation < 100ms"
+  constraints:
+    - "Zero monthly cost (free tier only)"
+    - "512MB Neon storage limit"
+    - "1M Qdrant vectors limit"
+    - "30 Groq requests/minute"
+    - "CPU-only inference"
+  scale_scope:
+    - "~100-500 book chunks indexed"
+    - "~50-100 daily active users"
+    - "30-minute session timeout"
+
+# =============================================================================
+# CONSTITUTION CHECK
+# =============================================================================
+
+constitution_check:
+  gates:
+    - gate: "Accuracy"
+      status: "PASS"
+      notes: "RAG ensures answers from book content only; citation required"
+
+    - gate: "Clarity"
+      status: "PASS"
+      notes: "API contracts and data models well-defined"
+
+    - gate: "Reproducibility"
+      status: "PASS"
+      notes: "All components use open-source, versioned dependencies"
+
+    - gate: "Rigor"
+      status: "PASS"
+      notes: "Semantic retrieval with relevance scoring ensures quality"
+
+    - gate: "Spec-First Workflow"
+      status: "PASS"
+      notes: "Spec created before plan; tasks will follow"
+
+# =============================================================================
+# SYSTEM ARCHITECTURE
+# =============================================================================
+
+architecture:
+  overview: |
+    The system follows a layered architecture with clear separation:
+    1. Presentation Layer (Docusaurus React Component)
+    2. API Layer (FastAPI endpoints)
+    3. Agent Layer (UserAgent, ContentAgent orchestration)
+    4. Tool Layer (RAGRetriever, TextEmbedder)
+    5. Data Layer (Qdrant vectors, Neon Postgres metadata)
+
+  components:
+    frontend:
+      name: "Docusaurus Chat Widget"
+      type: "React Component"
+      description: "Floating chat interface integrated into book pages"
+      responsibilities:
+        - "Render chat UI with message history"
+        - "Capture text selection from book content"
+        - "Send messages to backend API"
+        - "Display responses with source citations"
+        - "Manage local session state"
+      technologies:
+        - "React 18+"
+        - "TypeScript"
+        - "CSS Modules or Tailwind"
+        - "Docusaurus swizzled theme component"
+
+    api_gateway:
+      name: "FastAPI Backend"
+      type: "REST API"
+      description: "Handles HTTP requests, validation, and response formatting"
+      responsibilities:
+        - "Request validation (Pydantic)"
+        - "Session management"
+        - "Rate limiting"
+        - "CORS handling"
+        - "Health checks"
+        - "Error formatting"
+      endpoints:
+        - "POST /api/v1/chat"
+        - "POST /api/v1/session"
+        - "GET /api/v1/health"
+
+    agent_orchestrator:
+      name: "Agent Orchestrator"
+      type: "Python Module"
+      description: "Coordinates agent execution flow"
+      responsibilities:
+        - "Route requests to appropriate agent"
+        - "Manage agent execution pipeline"
+        - "Handle agent errors gracefully"
+        - "Collect metrics"
+
+    user_agent:
+      name: "UserAgent"
+      type: "Agent"
+      description: "Entry point for all user interactions"
+      responsibilities:
+        - "Intent classification"
+        - "Session context management"
+        - "Routing to ContentAgent"
+        - "Handle non-content queries (greetings, help)"
+      dependencies:
+        - "SessionManager"
+        - "IntentClassifier"
+        - "ContentAgent"
+
+    content_agent:
+      name: "ContentAgent"
+      type: "Agent"
+      description: "Handles book content queries"
+      responsibilities:
+        - "Query understanding and rewriting"
+        - "Orchestrate retrieval pipeline"
+        - "Generate responses with citations"
+        - "Confidence scoring"
+      dependencies:
+        - "TextEmbedder"
+        - "RAGRetriever"
+        - "LLMClient"
+
+    text_embedder:
+      name: "TextEmbedder"
+      type: "Tool"
+      description: "Converts text to vector embeddings"
+      responsibilities:
+        - "Load and cache embedding model"
+        - "Preprocess text (normalize, truncate)"
+        - "Generate 384-dim embeddings"
+        - "Batch processing for indexing"
+      dependencies:
+        - "sentence-transformers"
+
+    rag_retriever:
+      name: "RAGRetriever"
+      type: "Tool"
+      description: "Retrieves relevant content chunks"
+      responsibilities:
+        - "Query Qdrant with embeddings"
+        - "Apply score thresholds and filters"
+        - "Return ranked chunks with metadata"
+        - "Handle connection errors"
+      dependencies:
+        - "QdrantClient"
+
+    llm_client:
+      name: "LLMClient"
+      type: "Service"
+      description: "Interfaces with Groq LLM API"
+      responsibilities:
+        - "Construct prompts with retrieved context"
+        - "Call Groq API"
+        - "Parse and validate responses"
+        - "Handle rate limits"
+      dependencies:
+        - "groq"
+
+    session_manager:
+      name: "SessionManager"
+      type: "Service"
+      description: "Manages chat sessions"
+      responsibilities:
+        - "Create/retrieve sessions"
+        - "Store conversation history (in-memory)"
+        - "Handle session timeouts"
+        - "Log session metrics to Postgres"
+      dependencies:
+        - "NeonClient"
+
+    neon_client:
+      name: "NeonClient"
+      type: "Data Access"
+      description: "Postgres database operations"
+      responsibilities:
+        - "Connection pooling"
+        - "CRUD for content_chunks metadata"
+        - "CRUD for chat_sessions"
+        - "Query logging"
+      dependencies:
+        - "psycopg"
+
+    qdrant_client:
+      name: "QdrantClient"
+      type: "Data Access"
+      description: "Vector store operations"
+      responsibilities:
+        - "Collection management"
+        - "Vector upsert/search"
+        - "Payload filtering"
+      dependencies:
+        - "qdrant-client"
+
+# =============================================================================
+# DATA FLOW DIAGRAMS
+# =============================================================================
+
+data_flows:
+  # ---------------------------------------------------------------------------
+  # Main Query Flow
+  # ---------------------------------------------------------------------------
+  query_flow:
+    name: "User Query to Response"
+    description: "Complete flow from user question to chatbot response"
+    steps:
+      - step: 1
+        actor: "User"
+        action: "Types question in chat widget"
+        data: "{ message: string, selected_text?: string }"
+        target: "Frontend"
+
+      - step: 2
+        actor: "Frontend"
+        action: "Sends POST request to /api/v1/chat"
+        data: |
+          {
+            session_id: UUID,
+            message: string,
+            selected_text?: string,
+            current_page?: string
+          }
+        target: "FastAPI"
+
+      - step: 3
+        actor: "FastAPI"
+        action: "Validates request, invokes UserAgent"
+        data: "ChatRequest (Pydantic model)"
+        target: "UserAgent"
+
+      - step: 4
+        actor: "UserAgent"
+        action: "Classifies intent"
+        data: "{ message, context, history }"
+        target: "IntentClassifier"
+        outputs:
+          - intent: "content_query | selection_query | clarification | greeting | help | out_of_scope"
+
+      - step: 5
+        actor: "UserAgent"
+        action: "Routes to ContentAgent (if content-related)"
+        data: "{ query, context, chat_history }"
+        target: "ContentAgent"
+        condition: "intent in ['content_query', 'selection_query', 'clarification']"
+
+      - step: 6
+        actor: "ContentAgent"
+        action: "Generates query embedding"
+        data: "query_text: string"
+        target: "TextEmbedder"
+        outputs:
+          - embedding: "list[float] (384 dims)"
+
+      - step: 7
+        actor: "ContentAgent"
+        action: "Retrieves relevant chunks"
+        data: |
+          {
+            query_embedding: list[float],
+            top_k: 5,
+            score_threshold: 0.7,
+            filters?: { chapter?, section? }
+          }
+        target: "RAGRetriever"
+        outputs:
+          - chunks: "list[RetrievedChunk]"
+
+      - step: 8
+        actor: "RAGRetriever"
+        action: "Queries Qdrant vector store"
+        data: "SearchRequest with embedding + filters"
+        target: "Qdrant Cloud"
+        outputs:
+          - results: "list[ScoredPoint]"
+
+      - step: 9
+        actor: "ContentAgent"
+        action: "Constructs prompt with retrieved context"
+        data: |
+          {
+            system_prompt: string,
+            user_query: string,
+            retrieved_chunks: list[RetrievedChunk]
+          }
+        target: "LLMClient"
+
+      - step: 10
+        actor: "LLMClient"
+        action: "Calls Groq API"
+        data: "ChatCompletion request"
+        target: "Groq API"
+        outputs:
+          - completion: "string"
+
+      - step: 11
+        actor: "ContentAgent"
+        action: "Formats response with citations"
+        data: "raw_response + chunk_metadata"
+        target: "self"
+        outputs:
+          - response: |
+              {
+                answer: string,
+                sources: list[Source],
+                confidence: float,
+                is_from_book: boolean
+              }
+
+      - step: 12
+        actor: "UserAgent"
+        action: "Updates session, logs query"
+        data: "response + metrics"
+        target: "SessionManager, NeonClient"
+
+      - step: 13
+        actor: "FastAPI"
+        action: "Returns JSON response"
+        data: "ChatResponse"
+        target: "Frontend"
+
+      - step: 14
+        actor: "Frontend"
+        action: "Renders response with sources"
+        data: "ChatResponse"
+        target: "User"
+
+  # ---------------------------------------------------------------------------
+  # Text Selection Flow
+  # ---------------------------------------------------------------------------
+  selection_flow:
+    name: "Text Selection Context"
+    description: "How selected text is captured and used"
+    steps:
+      - step: 1
+        actor: "User"
+        action: "Selects text in book content"
+        data: "DOM Selection event"
+        target: "Frontend"
+
+      - step: 2
+        actor: "Frontend"
+        action: "Captures selection, shows context indicator"
+        data: "selected_text: string"
+        target: "ChatWidget state"
+
+      - step: 3
+        actor: "User"
+        action: "Types 'explain this'"
+        data: "{ message, selected_text }"
+        target: "Frontend"
+
+      - step: 4
+        actor: "Frontend"
+        action: "Includes selected_text in request"
+        data: "ChatRequest with selected_text field"
+        target: "FastAPI"
+
+      - step: 5
+        actor: "UserAgent"
+        action: "Detects selection_query intent"
+        data: "message + presence of selected_text"
+        target: "IntentClassifier"
+
+      - step: 6
+        actor: "ContentAgent"
+        action: "Combines selection with query for embedding"
+        data: "query_rewrite(message, selected_text)"
+        target: "TextEmbedder"
+
+  # ---------------------------------------------------------------------------
+  # Indexing Flow (Batch)
+  # ---------------------------------------------------------------------------
+  indexing_flow:
+    name: "Book Content Indexing"
+    description: "Batch process to index book content"
+    steps:
+      - step: 1
+        actor: "Indexer Script"
+        action: "Reads book markdown files"
+        data: "docs/**/*.md"
+        target: "Filesystem"
+
+      - step: 2
+        actor: "Indexer Script"
+        action: "Chunks content with overlap"
+        data: "markdown_content"
+        target: "Chunker"
+        outputs:
+          - chunks: "list[ContentChunk]"
+
+      - step: 3
+        actor: "Indexer Script"
+        action: "Generates embeddings (batch)"
+        data: "list[chunk_text]"
+        target: "TextEmbedder.generate_embeddings_batch"
+        outputs:
+          - embeddings: "list[list[float]]"
+
+      - step: 4
+        actor: "Indexer Script"
+        action: "Upserts to Qdrant"
+        data: "list[PointStruct]"
+        target: "Qdrant Cloud"
+
+      - step: 5
+        actor: "Indexer Script"
+        action: "Stores metadata in Postgres"
+        data: "list[ContentChunkRecord]"
+        target: "Neon Postgres"
+
+# =============================================================================
+# AGENT INTERACTIONS
+# =============================================================================
+
+agent_interactions:
+  # ---------------------------------------------------------------------------
+  # UserAgent Internal Flow
+  # ---------------------------------------------------------------------------
+  user_agent_flow:
+    name: "UserAgent Processing"
+    components:
+      intent_classifier:
+        type: "Internal Component"
+        method: "Rule-based + keyword matching"
+        logic: |
+          1. Check for greeting keywords → intent: greeting
+          2. Check for help keywords → intent: help
+          3. Check if selected_text present + short query → intent: selection_query
+          4. Check chat_history for recent topic + short query → intent: clarification
+          5. Check query against book topic keywords → intent: content_query
+          6. Default → intent: out_of_scope
+
+      session_context:
+        type: "In-Memory Store"
+        structure: |
+          {
+            session_id: UUID,
+            created_at: datetime,
+            last_activity: datetime,
+            messages: list[Message],
+            current_page: string | null
+          }
+
+      routing_rules:
+        - intent: "content_query"
+          route: "ContentAgent.handle_query"
+          pass_context: "chat_history (last 5 messages)"
+
+        - intent: "selection_query"
+          route: "ContentAgent.handle_query"
+          pass_context: "selected_text + chat_history"
+
+        - intent: "clarification"
+          route: "ContentAgent.handle_query"
+          pass_context: "chat_history (last 10 messages)"
+
+        - intent: "greeting"
+          route: null
+          response: "static greeting message"
+
+        - intent: "help"
+          route: null
+          response: "static help message"
+
+        - intent: "out_of_scope"
+          route: null
+          response: "static out-of-scope message"
+
+  # ---------------------------------------------------------------------------
+  # ContentAgent Internal Flow
+  # ---------------------------------------------------------------------------
+  content_agent_flow:
+    name: "ContentAgent Processing"
+    pipeline:
+      - stage: "Query Preparation"
+        steps:
+          - "Combine user query with selected_text (if any)"
+          - "Apply query rewriting for better retrieval"
+          - "Generate embedding via TextEmbedder"
+
+      - stage: "Retrieval"
+        steps:
+          - "Call RAGRetriever with embedding"
+          - "Apply score threshold (0.7)"
+          - "Return top-k (default 5) chunks"
+
+      - stage: "Context Construction"
+        steps:
+          - "Format retrieved chunks into context string"
+          - "Include chapter/section metadata"
+          - "Build system prompt with constraints"
+
+      - stage: "Generation"
+        steps:
+          - "Send prompt to LLM via LLMClient"
+          - "Parse response"
+          - "Extract/verify source citations"
+
+      - stage: "Response Formatting"
+        steps:
+          - "Structure answer with sources"
+          - "Calculate confidence score"
+          - "Set is_from_book flag"
+
+    tool_usage:
+      text_embedder:
+        when: "Query preparation stage"
+        input: "Combined query string"
+        output: "384-dim embedding vector"
+
+      rag_retriever:
+        when: "Retrieval stage"
+        input: "Embedding + filters + top_k + threshold"
+        output: "Ranked list of content chunks"
+
+# =============================================================================
+# PROJECT STRUCTURE
+# =============================================================================
+
+project_structure:
+  documentation:
+    path: "specs/002-rag-chatbot/"
+    files:
+      - "spec.yaml          # Feature specification"
+      - "plan.yaml          # This architectural plan"
+      - "tasks.md           # Implementation tasks (from /sp.tasks)"
+      - "research.md        # Phase 0 research notes"
+      - "data-model.md      # Database schema details"
+      - "contracts/         # API contracts directory"
+
+  backend:
+    path: "backend/"
+    structure: |
+      backend/
+      ├── main.py                    # FastAPI application entry point
+      ├── requirements.txt           # Python dependencies
+      ├── Dockerfile                 # Container definition
+      ├── .env.example              # Environment variable template
+      │
+      ├── app/
+      │   ├── __init__.py
+      │   ├── config.py             # Settings and configuration
+      │   │
+      │   ├── api/
+      │   │   ├── __init__.py
+      │   │   ├── routes/
+      │   │   │   ├── __init__.py
+      │   │   │   ├── chat.py       # POST /api/v1/chat
+      │   │   │   ├── session.py    # POST /api/v1/session
+      │   │   │   └── health.py     # GET /api/v1/health
+      │   │   ├── schemas/
+      │   │   │   ├── __init__.py
+      │   │   │   ├── chat.py       # ChatRequest, ChatResponse
+      │   │   │   └── session.py    # SessionRequest, SessionResponse
+      │   │   └── middleware/
+      │   │       ├── __init__.py
+      │   │       ├── cors.py       # CORS configuration
+      │   │       └── rate_limit.py # Rate limiting
+      │   │
+      │   ├── agents/
+      │   │   ├── __init__.py
+      │   │   ├── base.py           # BaseAgent abstract class
+      │   │   ├── user_agent.py     # UserAgent implementation
+      │   │   ├── content_agent.py  # ContentAgent implementation
+      │   │   └── orchestrator.py   # Agent orchestration logic
+      │   │
+      │   ├── tools/
+      │   │   ├── __init__.py
+      │   │   ├── base.py           # BaseTool abstract class
+      │   │   ├── text_embedder.py  # TextEmbedder implementation
+      │   │   └── rag_retriever.py  # RAGRetriever implementation
+      │   │
+      │   ├── services/
+      │   │   ├── __init__.py
+      │   │   ├── llm_client.py     # Groq API client
+      │   │   ├── session_manager.py # Session management
+      │   │   └── intent_classifier.py # Intent classification
+      │   │
+      │   ├── db/
+      │   │   ├── __init__.py
+      │   │   ├── neon.py           # Neon Postgres client
+      │   │   ├── qdrant.py         # Qdrant client
+      │   │   └── models.py         # SQLAlchemy/Pydantic models
+      │   │
+      │   └── core/
+      │       ├── __init__.py
+      │       ├── exceptions.py     # Custom exceptions
+      │       └── logging.py        # Logging configuration
+      │
+      ├── scripts/
+      │   ├── __init__.py
+      │   ├── index_book.py         # Book indexing script
+      │   ├── setup_qdrant.py       # Qdrant collection setup
+      │   └── setup_neon.py         # Postgres schema setup
+      │
+      └── tests/
+          ├── __init__.py
+          ├── conftest.py           # Pytest fixtures
+          ├── unit/
+          │   ├── __init__.py
+          │   ├── test_text_embedder.py
+          │   ├── test_rag_retriever.py
+          │   ├── test_user_agent.py
+          │   └── test_content_agent.py
+          ├── integration/
+          │   ├── __init__.py
+          │   ├── test_chat_endpoint.py
+          │   └── test_indexing.py
+          └── contract/
+              ├── __init__.py
+              └── test_api_contracts.py
+
+  frontend:
+    path: "website/src/"
+    structure: |
+      website/
+      ├── docusaurus.config.js      # Add theme component
+      │
+      └── src/
+          ├── theme/
+          │   └── Root.js           # Wrap with ChatProvider
+          │
+          ├── components/
+          │   └── ChatWidget/
+          │       ├── index.tsx     # Main export
+          │       ├── ChatWidget.tsx        # Widget container
+          │       ├── ChatWindow.tsx        # Chat message area
+          │       ├── ChatInput.tsx         # Input component
+          │       ├── MessageBubble.tsx     # Message display
+          │       ├── SourceCitation.tsx    # Source links
+          │       ├── SelectionContext.tsx  # Selection indicator
+          │       ├── ChatWidget.module.css # Styles
+          │       └── types.ts              # TypeScript types
+          │
+          ├── hooks/
+          │   ├── useChat.ts        # Chat API hook
+          │   ├── useSession.ts     # Session management
+          │   └── useTextSelection.ts # Text selection capture
+          │
+          └── services/
+              └── chatApi.ts        # API client
+
+  scripts:
+    path: "scripts/"
+    structure: |
+      scripts/
+      ├── dev.sh                    # Local development startup
+      ├── deploy.sh                 # Deployment script
+      └── index-book.sh             # Wrapper for indexing
+
+# =============================================================================
+# KEY DESIGN DECISIONS
+# =============================================================================
+
+design_decisions:
+  - id: "DD-001"
+    title: "Multi-Agent Architecture"
+    decision: "Use UserAgent + ContentAgent separation"
+    rationale: |
+      - Clear separation of concerns (interaction vs. content)
+      - UserAgent can handle non-content queries without invoking RAG
+      - Easier to extend with additional agents later
+    alternatives_considered:
+      - "Single monolithic handler"
+      - "Function-based routing without agents"
+    rejected_because: "Less modular, harder to maintain and extend"
+
+  - id: "DD-002"
+    title: "In-Memory Session Storage"
+    decision: "Store session/conversation history in-memory, not Postgres"
+    rationale: |
+      - Faster access for conversation context
+      - Reduces Postgres load (free tier limits)
+      - Sessions are ephemeral (30 min timeout)
+      - Only log aggregates to Postgres
+    alternatives_considered:
+      - "Full session history in Postgres"
+      - "Redis cache layer"
+    rejected_because: "Adds complexity and cost for ephemeral data"
+
+  - id: "DD-003"
+    title: "Local Embedding Generation"
+    decision: "Use sentence-transformers locally instead of API"
+    rationale: |
+      - Zero cost (vs. OpenAI embeddings API)
+      - No rate limits
+      - all-MiniLM-L6-v2 is fast on CPU
+      - Consistent embeddings between indexing and query
+    alternatives_considered:
+      - "OpenAI text-embedding-3-small"
+      - "Cohere embed API"
+    rejected_because: "Violates free-tier constraint"
+
+  - id: "DD-004"
+    title: "Qdrant Cloud over ChromaDB"
+    decision: "Use Qdrant Cloud free tier"
+    rationale: |
+      - Managed service (no infrastructure)
+      - 1M vector free tier is generous
+      - Better performance than ChromaDB
+      - Payload filtering for chapter/section
+    alternatives_considered:
+      - "ChromaDB (self-hosted)"
+      - "Pinecone free tier"
+    rejected_because: "ChromaDB needs hosting; Pinecone has lower limits"
+
+  - id: "DD-005"
+    title: "Groq for LLM"
+    decision: "Use Groq free tier with llama-3.1-8b-instant"
+    rationale: |
+      - Generous free tier (30 req/min)
+      - Fast inference
+      - Llama 3.1 8B is capable for RAG
+      - Easy fallback to Ollama for local dev
+    alternatives_considered:
+      - "Together.ai"
+      - "Self-hosted Ollama only"
+    rejected_because: "Together requires credit card; Ollama needs local GPU"
+
+  - id: "DD-006"
+    title: "Rule-Based Intent Classification"
+    decision: "Use rule-based + keyword matching for intent"
+    rationale: |
+      - Simple and deterministic
+      - No additional LLM call needed
+      - Fast execution
+      - Easy to debug and maintain
+    alternatives_considered:
+      - "LLM-based classification"
+      - "Fine-tuned classifier model"
+    rejected_because: "Adds latency and complexity; overkill for 6 intents"
+
+# =============================================================================
+# INTERFACES & API CONTRACTS
+# =============================================================================
+
+api_contracts:
+  chat_endpoint:
+    path: "/api/v1/chat"
+    method: "POST"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        type: "object"
+        required: ["session_id", "message"]
+        properties:
+          session_id:
+            type: "string"
+            format: "uuid"
+            example: "123e4567-e89b-12d3-a456-426614174000"
+          message:
+            type: "string"
+            maxLength: 1000
+            example: "What is inverse kinematics?"
+          selected_text:
+            type: "string"
+            maxLength: 2000
+            example: "The Denavit-Hartenberg convention..."
+          current_page:
+            type: "string"
+            example: "/docs/module-2-digital-twin/kinematics"
+    response:
+      success:
+        status: 200
+        body:
+          type: "object"
+          properties:
+            session_id:
+              type: "string"
+              format: "uuid"
+            response:
+              type: "object"
+              properties:
+                answer:
+                  type: "string"
+                sources:
+                  type: "array"
+                  items:
+                    type: "object"
+                    properties:
+                      chapter: { type: "string" }
+                      section: { type: "string" }
+                      relevance_score: { type: "number" }
+                confidence:
+                  type: "number"
+                  minimum: 0
+                  maximum: 1
+            intent:
+              type: "string"
+              enum: ["content_query", "selection_query", "clarification", "greeting", "help", "out_of_scope"]
+            processing_time_ms:
+              type: "integer"
+      errors:
+        - status: 400
+          body:
+            error: "validation_error"
+            detail: "Message is required"
+        - status: 429
+          body:
+            error: "rate_limit_exceeded"
+            retry_after: 60
+        - status: 503
+          body:
+            error: "service_unavailable"
+            detail: "LLM service temporarily unavailable"
+
+  session_endpoint:
+    path: "/api/v1/session"
+    method: "POST"
+    request:
+      body:
+        type: "object"
+        properties:
+          initial_page:
+            type: "string"
+            example: "/docs/intro"
+    response:
+      success:
+        status: 201
+        body:
+          session_id:
+            type: "string"
+            format: "uuid"
+          expires_at:
+            type: "string"
+            format: "datetime"
+
+  health_endpoint:
+    path: "/api/v1/health"
+    method: "GET"
+    response:
+      success:
+        status: 200
+        body:
+          status: "healthy"
+          version: "1.0.0"
+          dependencies:
+            neon: "connected"
+            qdrant: "connected"
+            embedding_model: "loaded"
+
+# =============================================================================
+# NON-FUNCTIONAL REQUIREMENTS
+# =============================================================================
+
+nfr_implementation:
+  performance:
+    - requirement: "p95 latency < 3000ms"
+      implementation:
+        - "Connection pooling for Neon and Qdrant"
+        - "Model preloading at startup"
+        - "Async API handlers"
+        - "Limit chat history to last 5 messages for context"
+
+    - requirement: "10 concurrent users"
+      implementation:
+        - "Uvicorn with 4 workers"
+        - "In-memory session storage"
+        - "Async database operations"
+
+  reliability:
+    - requirement: "99% uptime"
+      implementation:
+        - "Health check endpoint for orchestrator"
+        - "Graceful degradation on LLM failure"
+        - "Retry logic with exponential backoff"
+        - "Circuit breaker for external services"
+
+  security:
+    - requirement: "Input sanitization"
+      implementation:
+        - "Pydantic validation on all inputs"
+        - "Max length limits on message and selected_text"
+        - "HTML escaping for responses"
+        - "No SQL injection via parameterized queries"
+
+    - requirement: "CORS restriction"
+      implementation:
+        - "Allow only book domain origin"
+        - "Credentials not required (no auth)"
+
+  cost:
+    - requirement: "Zero monthly cost"
+      implementation:
+        - "Neon free tier monitoring"
+        - "Qdrant usage tracking"
+        - "Groq rate limit awareness"
+        - "Local embedding model"
+
+# =============================================================================
+# RISKS & MITIGATIONS
+# =============================================================================
+
+risks:
+  - id: "RISK-001"
+    description: "Free tier rate limits may be insufficient"
+    probability: "Medium"
+    impact: "Medium"
+    mitigation:
+      - "Implement request queuing"
+      - "Show user-friendly rate limit messages"
+      - "Cache common queries (future enhancement)"
+    monitoring: "Track Groq rate limit headers"
+
+  - id: "RISK-002"
+    description: "LLM hallucination despite RAG"
+    probability: "Low"
+    impact: "High"
+    mitigation:
+      - "Strict system prompt constraints"
+      - "Require source citations"
+      - "Confidence threshold (reject < 0.5)"
+      - "Retrieved chunk display for verification"
+    monitoring: "Log and review low-confidence responses"
+
+  - id: "RISK-003"
+    description: "Cold start latency"
+    probability: "High"
+    impact: "Low"
+    mitigation:
+      - "Model preloading at container start"
+      - "Connection keep-alive"
+      - "User feedback ('Waking up...')"
+    monitoring: "Track first-request latency"
+
+  - id: "RISK-004"
+    description: "Poor retrieval quality"
+    probability: "Medium"
+    impact: "Medium"
+    mitigation:
+      - "Chunk overlap for context continuity"
+      - "Relevance threshold (0.7)"
+      - "Query rewriting for better matching"
+      - "Manual evaluation of retrieval quality"
+    monitoring: "Log top_chunk_score distribution"
+
+# =============================================================================
+# IMPLEMENTATION PHASES
+# =============================================================================
+
+implementation_phases:
+  phase_1:
+    name: "Core RAG Pipeline"
+    duration_estimate: "Foundation phase"
+    deliverables:
+      - task: "Project setup and dependencies"
+        files:
+          - "backend/requirements.txt"
+          - "backend/Dockerfile"
+          - "backend/.env.example"
+
+      - task: "TextEmbedder tool"
+        files:
+          - "backend/app/tools/text_embedder.py"
+          - "backend/tests/unit/test_text_embedder.py"
+
+      - task: "Qdrant setup and RAGRetriever"
+        files:
+          - "backend/app/db/qdrant.py"
+          - "backend/app/tools/rag_retriever.py"
+          - "backend/scripts/setup_qdrant.py"
+          - "backend/tests/unit/test_rag_retriever.py"
+
+      - task: "Book indexing script"
+        files:
+          - "backend/scripts/index_book.py"
+          - "backend/tests/integration/test_indexing.py"
+
+      - task: "Basic FastAPI with health endpoint"
+        files:
+          - "backend/main.py"
+          - "backend/app/api/routes/health.py"
+          - "backend/app/config.py"
+
+    success_criteria:
+      - "Embedding model loads and generates vectors"
+      - "Book content indexed in Qdrant"
+      - "Query retrieves relevant chunks"
+      - "Health endpoint returns 200"
+
+  phase_2:
+    name: "Agent Orchestration"
+    duration_estimate: "Core logic phase"
+    dependencies: ["phase_1"]
+    deliverables:
+      - task: "BaseAgent and orchestrator"
+        files:
+          - "backend/app/agents/base.py"
+          - "backend/app/agents/orchestrator.py"
+
+      - task: "UserAgent with intent classification"
+        files:
+          - "backend/app/agents/user_agent.py"
+          - "backend/app/services/intent_classifier.py"
+          - "backend/tests/unit/test_user_agent.py"
+
+      - task: "ContentAgent with LLM integration"
+        files:
+          - "backend/app/agents/content_agent.py"
+          - "backend/app/services/llm_client.py"
+          - "backend/tests/unit/test_content_agent.py"
+
+      - task: "Session management"
+        files:
+          - "backend/app/services/session_manager.py"
+
+      - task: "Neon Postgres integration"
+        files:
+          - "backend/app/db/neon.py"
+          - "backend/app/db/models.py"
+          - "backend/scripts/setup_neon.py"
+
+      - task: "Chat and session endpoints"
+        files:
+          - "backend/app/api/routes/chat.py"
+          - "backend/app/api/routes/session.py"
+          - "backend/app/api/schemas/chat.py"
+          - "backend/app/api/schemas/session.py"
+          - "backend/tests/integration/test_chat_endpoint.py"
+
+    success_criteria:
+      - "UserAgent classifies intents correctly"
+      - "ContentAgent generates cited responses"
+      - "Session maintains conversation context"
+      - "Chat endpoint returns valid responses"
+
+  phase_3:
+    name: "Frontend Integration"
+    duration_estimate: "UI phase"
+    dependencies: ["phase_2"]
+    deliverables:
+      - task: "ChatWidget React component"
+        files:
+          - "website/src/components/ChatWidget/index.tsx"
+          - "website/src/components/ChatWidget/ChatWidget.tsx"
+          - "website/src/components/ChatWidget/ChatWindow.tsx"
+          - "website/src/components/ChatWidget/ChatInput.tsx"
+          - "website/src/components/ChatWidget/MessageBubble.tsx"
+          - "website/src/components/ChatWidget/SourceCitation.tsx"
+          - "website/src/components/ChatWidget/types.ts"
+
+      - task: "Text selection handler"
+        files:
+          - "website/src/hooks/useTextSelection.ts"
+          - "website/src/components/ChatWidget/SelectionContext.tsx"
+
+      - task: "Chat API client and hooks"
+        files:
+          - "website/src/services/chatApi.ts"
+          - "website/src/hooks/useChat.ts"
+          - "website/src/hooks/useSession.ts"
+
+      - task: "Styling"
+        files:
+          - "website/src/components/ChatWidget/ChatWidget.module.css"
+
+      - task: "Docusaurus integration"
+        files:
+          - "website/src/theme/Root.js"
+          - "website/docusaurus.config.js (modification)"
+
+    success_criteria:
+      - "Chat widget appears on all book pages"
+      - "Text selection captures content"
+      - "Messages sent and responses displayed"
+      - "Sources link to book sections"
+
+  phase_4:
+    name: "Polish & Deployment"
+    duration_estimate: "Finalization phase"
+    dependencies: ["phase_3"]
+    deliverables:
+      - task: "Error handling and edge cases"
+        files:
+          - "backend/app/core/exceptions.py"
+          - "backend/app/api/middleware/rate_limit.py"
+          - "backend/app/api/middleware/cors.py"
+
+      - task: "Logging and monitoring"
+        files:
+          - "backend/app/core/logging.py"
+
+      - task: "Deployment configuration"
+        files:
+          - "backend/Dockerfile (refinement)"
+          - "scripts/deploy.sh"
+          - "railway.json or render.yaml"
+
+      - task: "Documentation"
+        files:
+          - "README.md (update)"
+          - "backend/README.md"
+
+    success_criteria:
+      - "All edge cases handled gracefully"
+      - "Deployed and accessible"
+      - "Health checks passing"
+      - "Documentation complete"
+
+# =============================================================================
+# APPENDIX: ENVIRONMENT VARIABLES
+# =============================================================================
+
+appendix:
+  environment_variables:
+    required:
+      - name: "NEON_DATABASE_URL"
+        description: "Neon Postgres connection string"
+        example: "postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require"
+
+      - name: "QDRANT_URL"
+        description: "Qdrant Cloud cluster URL"
+        example: "https://xxx-xxx.us-east4-0.gcp.cloud.qdrant.io"
+
+      - name: "QDRANT_API_KEY"
+        description: "Qdrant Cloud API key"
+        example: "qdrant_api_key_here"
+
+      - name: "GROQ_API_KEY"
+        description: "Groq API key"
+        example: "gsk_xxx"
+
+    optional:
+      - name: "EMBEDDING_MODEL"
+        description: "Sentence-transformers model name"
+        default: "sentence-transformers/all-MiniLM-L6-v2"
+
+      - name: "LLM_MODEL"
+        description: "Groq model name"
+        default: "llama-3.1-8b-instant"
+
+      - name: "CORS_ORIGINS"
+        description: "Allowed CORS origins (comma-separated)"
+        default: "http://localhost:3000"
+
+      - name: "LOG_LEVEL"
+        description: "Logging level"
+        default: "INFO"
+
+      - name: "SESSION_TIMEOUT_MINUTES"
+        description: "Session inactivity timeout"
+        default: "30"
