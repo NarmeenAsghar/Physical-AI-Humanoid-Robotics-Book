@@ -20,7 +20,7 @@ By the end of this module, you will be able to:
 
 - Python programming experience (functions, classes, callbacks)
 - Basic Linux command-line proficiency
-- ROS 2 Humble installed on Ubuntu 22.04 (see [Installation Guide](/appendices/installation))
+- ROS 2 Humble installed on Ubuntu 22.04 (see [Installation Guide](/docs/appendices/installation))
 
 ---
 

@@ -20,7 +20,7 @@ By the end of this module, you will be able to:
 
 - Completed Module 1 (ROS 2 fundamentals, URDF)
 - Working ROS 2 Humble workspace
-- Gazebo Harmonic installed (see [Installation Guide](/appendices/installation))
+- Gazebo Harmonic installed (see [Installation Guide](/docs/appendices/installation))
 
 ---
 

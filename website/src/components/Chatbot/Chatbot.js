@@ -33,12 +33,12 @@ import styles from './Chatbot.module.css';
  * Backend API URL - hardcoded for security (no process.env in browser)
  *
  * For production, change this to your deployed backend URL:
- * - Development: 'http://localhost:8000'
+ * - Development: 'https://narmeenasghar-rag-chatbot.hf.space'
  * - Production: 'https://your-backend.railway.app' or similar
  *
  * IMPORTANT: Never put API keys here! The backend handles all secrets.
  */
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'https://narmeenasghar-rag-chatbot.hf.space';
 
 /**
  * API endpoint for chat - uses the simplified /chat endpoint

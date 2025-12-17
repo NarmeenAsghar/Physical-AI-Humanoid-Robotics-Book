@@ -625,7 +625,7 @@ async def lifespan(app: FastAPI):
 
     print("✓ Using FREE simulated LLM (no API key required)")
     print("=" * 60)
-    print("Server ready! Visit http://localhost:8000/docs for API docs")
+    print("Server ready! Visit https://narmeenasghar-rag-chatbot.hf.space/docs for API docs")
     print("=" * 60)
 
     yield

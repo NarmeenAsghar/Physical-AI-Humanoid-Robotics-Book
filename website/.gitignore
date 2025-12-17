@@ -4,6 +4,10 @@
 # Production
 /build
 
+# Ignore Qdrant local database files
+backend/qdrant_local/
+
+
 # Generated files
 .docusaurus
 .cache-loader

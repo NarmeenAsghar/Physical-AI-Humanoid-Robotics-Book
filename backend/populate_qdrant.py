@@ -403,7 +403,7 @@ Examples:
     print("=" * 60)
     print("\nNext steps:")
     print("  1. Start the backend: python main.py")
-    print("  2. Test the chatbot: curl -X POST http://localhost:8000/chat \\")
+    print("  2. Test the chatbot: curl -X POST https://narmeenasghar-rag-chatbot.hf.space/chat \\")
     print('     -H "Content-Type: application/json" \\')
     print('     -d \'{"query": "What is ROS2?"}\'')
 

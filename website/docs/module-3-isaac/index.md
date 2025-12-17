@@ -22,7 +22,7 @@ By the end of this module, you will be able to:
 - Completed Modules 1 and 2 (ROS 2, Gazebo simulation)
 - NVIDIA RTX GPU (minimum RTX 2070, recommended RTX 3080+)
 - Ubuntu 22.04 with NVIDIA Driver 525+ and CUDA 12.0+
-- Isaac Sim 2023.1+ installed (see [Installation Guide](/appendices/installation))
+- Isaac Sim 2023.1+ installed (see [Installation Guide](/docs/appendices/installation))
 
 ---
 

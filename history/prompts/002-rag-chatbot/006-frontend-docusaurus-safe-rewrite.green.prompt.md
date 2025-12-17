@@ -51,7 +51,7 @@ Task: Rewrite `Chatbot.js` to be **Docusaurus-compatible** and **backend-safe**.
    - Docusaurus `src/components/Chatbot/Chatbot.js` compatible
    - Include docstrings / comments explaining important parts
 
-Important: All backend calls must go to `http://localhost:8000/chat` or relative path. Do **not include any secret keys** in the frontend code.
+Important: All backend calls must go to `https://narmeenasghar-rag-chatbot.hf.space/chat` or relative path. Do **not include any secret keys** in the frontend code.
 
 ## Response snapshot
 
@@ -59,7 +59,7 @@ Rewrote `Chatbot.js` (v2.0.0) with the following security and compatibility impr
 
 **Security Changes:**
 - Removed `process.env.REACT_APP_API_URL` - No process.env in browser
-- Hardcoded `BACKEND_URL = 'http://localhost:8000'` with clear comments
+- Hardcoded `BACKEND_URL = 'https://narmeenasghar-rag-chatbot.hf.space'` with clear comments
 - Uses simplified `/chat` endpoint instead of `/api/v1/chat`
 - NO API keys, secrets, or Authorization headers in frontend
 - All sensitive operations (Qdrant, embeddings) handled by backend
