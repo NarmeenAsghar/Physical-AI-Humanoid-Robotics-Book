@@ -36,7 +36,7 @@ from pathlib import Path
 
 # .env file
 env_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=env_path) # <--- Force load .env
+load_dotenv(dotenv_path=env_path, override=True) # <--- Force load .env
 
 # Cloud connection settings (set these in .env or environment variables)
 QDRANT_URL = os.getenv("QDRANT_URL")  # e.g., "https://xyz-example.cloud.qdrant.io:6333"
