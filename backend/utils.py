@@ -110,24 +110,49 @@ def retrieve_from_qdrant(
 
     # Perform search using the query_points API
     try:
+        # First, check collection has points
+        try:
+            collection_info = client.get_collection(collection_name)
+            print(f"[SEARCH] Collection '{collection_name}' has {collection_info.points_count} points")
+        except Exception as info_err:
+            print(f"[SEARCH] Could not get collection info: {info_err}")
+
+        # Try search without score_threshold first to see if we get ANY results
         results = client.query_points(
             collection_name=collection_name,
             query=query_vector,
             limit=top_k,
-            score_threshold=score_threshold
+            with_payload=True,  # Explicitly request payload
         )
+
+        print(f"[SEARCH] Raw results count: {len(results.points) if results.points else 0}")
+
+        # Debug: print first result's structure
+        if results.points and len(results.points) > 0:
+            first_hit = results.points[0]
+            print(f"[SEARCH] First hit score: {first_hit.score}, payload keys: {list(first_hit.payload.keys()) if first_hit.payload else 'None'}")
 
         formatted = []
         for hit in results.points:
+            # Skip results below score threshold
+            if hit.score < score_threshold:
+                print(f"[SEARCH] Skipping result with low score: {hit.score}")
+                continue
+
             # Handle both 'text' (from indexer.py) and 'content' (from populate_qdrant.py) field names
-            content = hit.payload.get("text", hit.payload.get("content", ""))
+            content = hit.payload.get("text", hit.payload.get("content", "")) if hit.payload else ""
+
+            # Skip if no content found
+            if not content:
+                print(f"[SEARCH] Warning: No content in payload. Keys: {list(hit.payload.keys()) if hit.payload else 'None'}")
+                continue
 
             # Extract chapter/section from payload or derive from source path
-            chapter = hit.payload.get("chapter", "Unknown")
-            section = hit.payload.get("section", "Unknown")
+            chapter = hit.payload.get("chapter", "Unknown") if hit.payload else "Unknown"
+            section = hit.payload.get("section", "Unknown") if hit.payload else "Unknown"
 
             # If chapter is unknown, try to extract from source file path
-            if chapter == "Unknown" and "source" in hit.payload:
+            if chapter == "Unknown" and hit.payload and "source" in hit.payload:
                 source_path = hit.payload.get("source", "")
                 # Extract meaningful info from path like "../website/docs/module-1/intro.md"
                 parts = source_path.replace("\\", "/").split("/")
@@ -141,9 +166,9 @@ def retrieve_from_qdrant(
                 "content": content,
                 "chapter": chapter,
                 "section": section,
-                "metadata": {k: v for k, v in hit.payload.items() if k not in ["content", "text"]}
+                "metadata": {k: v for k, v in hit.payload.items() if k not in ["content", "text"]} if hit.payload else {}
             })
-        
+
         print(f"[SEARCH] Found {len(formatted)} results for: '{query}'")
         return formatted
     except Exception as e:
