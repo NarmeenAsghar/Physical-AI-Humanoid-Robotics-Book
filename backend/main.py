@@ -49,7 +49,7 @@ class Settings:
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
     SESSION_TIMEOUT_MINUTES: int = int(os.getenv("SESSION_TIMEOUT_MINUTES", "30"))
     TOP_K_RESULTS: int = int(os.getenv("TOP_K_RESULTS", "5"))
-    SCORE_THRESHOLD: float = float(os.getenv("SCORE_THRESHOLD", "0.5"))
+    SCORE_THRESHOLD: float = float(os.getenv("SCORE_THRESHOLD", "0.2"))
 
 settings = Settings()
 
