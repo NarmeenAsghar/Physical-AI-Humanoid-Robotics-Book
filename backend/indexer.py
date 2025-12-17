@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
@@ -10,8 +11,9 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 # ---------------------------
 load_dotenv()
 
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+# Hardcoded fallback for cloud connection (same as utils.py)
+QDRANT_URL = os.getenv("QDRANT_URL", "https://6208a944-b6cd-4e96-b2d4-40e619f896db.europe-west3-0.gcp.cloud.qdrant.io:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.knVAUbUV-odBQxgqjaEqFaxdLy47uYy5vX3WnfSQOXc")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "book_chunks")
 
 # ---------------------------
@@ -20,6 +22,7 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "book_chunks")
 DOCS_PATH = Path("../website/docs")
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
+BATCH_SIZE = 50  # Upload in smaller batches to avoid timeouts
 
 # ---------------------------
 # INIT MODELS
@@ -31,6 +34,7 @@ print("🔹 Connecting to Qdrant...")
 client = QdrantClient(
     url=QDRANT_URL,
     api_key=QDRANT_API_KEY,
+    timeout=60,  # Increase timeout to 60 seconds
 )
 
 # ---------------------------
@@ -98,15 +102,38 @@ for md_file in DOCS_PATH.rglob("*.md"):
         point_id += 1
 
 # ---------------------------
-# INSERT INTO QDRANT
+# INSERT INTO QDRANT (in batches)
 # ---------------------------
 print(f"🔹 Total files read: {file_count}")
 print(f"🔹 Total chunks created: {len(points)}")
-print("🔹 Uploading to Qdrant...")
+print(f"🔹 Uploading to Qdrant in batches of {BATCH_SIZE}...")
 
-client.upsert(
-    collection_name=QDRANT_COLLECTION,
-    points=points,
-)
+total_batches = (len(points) + BATCH_SIZE - 1) // BATCH_SIZE
+uploaded = 0
 
-print("✅ Indexing completed successfully!")
+for i in range(0, len(points), BATCH_SIZE):
+    batch = points[i:i + BATCH_SIZE]
+    batch_num = (i // BATCH_SIZE) + 1
+
+    retry_count = 0
+    max_retries = 3
+
+    while retry_count < max_retries:
+        try:
+            client.upsert(
+                collection_name=QDRANT_COLLECTION,
+                points=batch,
+            )
+            uploaded += len(batch)
+            print(f"   ✓ Batch {batch_num}/{total_batches} uploaded ({uploaded}/{len(points)} points)")
+            break
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                print(f"   ⚠ Batch {batch_num} failed, retrying ({retry_count}/{max_retries})...")
+                time.sleep(2)  # Wait before retry
+            else:
+                print(f"   ✗ Batch {batch_num} failed after {max_retries} retries: {e}")
+                raise
+
+print(f"✅ Indexing completed! {uploaded} chunks uploaded to Qdrant Cloud.")
