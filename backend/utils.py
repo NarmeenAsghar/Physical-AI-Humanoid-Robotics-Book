@@ -119,13 +119,29 @@ def retrieve_from_qdrant(
 
         formatted = []
         for hit in results.points:
+            # Handle both 'text' (from indexer.py) and 'content' (from populate_qdrant.py) field names
+            content = hit.payload.get("text", hit.payload.get("content", ""))
+
+            # Extract chapter/section from payload or derive from source path
+            chapter = hit.payload.get("chapter", "Unknown")
+            section = hit.payload.get("section", "Unknown")
+
+            # If chapter is unknown, try to extract from source file path
+            if chapter == "Unknown" and "source" in hit.payload:
+                source_path = hit.payload.get("source", "")
+                # Extract meaningful info from path like "../website/docs/module-1/intro.md"
+                parts = source_path.replace("\\", "/").split("/")
+                if len(parts) >= 2:
+                    chapter = parts[-2].replace("-", " ").title() if parts[-2] != "docs" else "General"
+                    section = parts[-1].replace(".md", "").replace("-", " ").title()
+
             formatted.append({
                 "id": hit.id,
                 "score": hit.score,
-                "content": hit.payload.get("content", ""),
-                "chapter": hit.payload.get("chapter", "Unknown"),
-                "section": hit.payload.get("section", "Unknown"),
-                "metadata": {k: v for k, v in hit.payload.items() if k != "content"}
+                "content": content,
+                "chapter": chapter,
+                "section": section,
+                "metadata": {k: v for k, v in hit.payload.items() if k not in ["content", "text"]}
             })
         
         print(f"[SEARCH] Found {len(formatted)} results for: '{query}'")
@@ -133,6 +149,120 @@ def retrieve_from_qdrant(
     except Exception as e:
         print(f"[SEARCH] Error during retrieval: {e}")
         return []
+
+# =============================================================================
+# COLLECTION MANAGEMENT FUNCTIONS
+# =============================================================================
+
+def init_qdrant_collection(collection_name: str = DEFAULT_COLLECTION, recreate: bool = False) -> bool:
+    """
+    Initialize a Qdrant collection if it doesn't exist.
+
+    Args:
+        collection_name: Name of the collection to create
+        recreate: If True, delete and recreate the collection
+
+    Returns:
+        bool: True if collection exists/created successfully
+    """
+    client = get_qdrant_client()
+
+    try:
+        existing = [c.name for c in client.get_collections().collections]
+
+        if recreate and collection_name in existing:
+            print(f"[Qdrant] Deleting existing collection: {collection_name}")
+            client.delete_collection(collection_name)
+            existing.remove(collection_name)
+
+        if collection_name not in existing:
+            print(f"[Qdrant] Creating collection: {collection_name}")
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(
+                    size=EMBEDDING_DIMENSION,
+                    distance=Distance.COSINE,
+                ),
+            )
+            print(f"[Qdrant] Collection '{collection_name}' created successfully")
+        else:
+            print(f"[Qdrant] Collection '{collection_name}' already exists")
+
+        return True
+    except Exception as e:
+        print(f"[Qdrant] Error initializing collection: {e}")
+        return False
+
+
+def get_collection_info(collection_name: str = DEFAULT_COLLECTION) -> Optional[Dict[str, Any]]:
+    """
+    Get information about a Qdrant collection.
+
+    Args:
+        collection_name: Name of the collection
+
+    Returns:
+        Dict with collection info or None if not found
+    """
+    client = get_qdrant_client()
+
+    try:
+        info = client.get_collection(collection_name)
+        return {
+            "name": collection_name,
+            "points_count": info.points_count,
+            "vector_size": info.config.params.vectors.size,
+            "distance": str(info.config.params.vectors.distance),
+            "status": str(info.status),
+        }
+    except Exception as e:
+        print(f"[Qdrant] Error getting collection info: {e}")
+        return None
+
+
+def upsert_chunks(chunks: List[Dict[str, Any]], collection_name: str = DEFAULT_COLLECTION) -> int:
+    """
+    Insert or update chunks in the Qdrant collection.
+
+    Args:
+        chunks: List of chunk dicts with 'id', 'content', and optional 'metadata'
+        collection_name: Target collection name
+
+    Returns:
+        int: Number of chunks upserted
+    """
+    client = get_qdrant_client()
+
+    points = []
+    for chunk in chunks:
+        # Generate embedding for the content
+        content = chunk.get("content", "")
+        embedding = embed_text(content)
+
+        # Build payload
+        payload = {
+            "content": content,
+            "chapter": chunk.get("metadata", {}).get("chapter", "Unknown"),
+            "section": chunk.get("metadata", {}).get("section", "Unknown"),
+        }
+        # Add any additional metadata
+        if "metadata" in chunk:
+            for k, v in chunk["metadata"].items():
+                if k not in payload:
+                    payload[k] = v
+
+        points.append(PointStruct(
+            id=chunk.get("id", hash(content) % (10**9)),
+            vector=embedding,
+            payload=payload,
+        ))
+
+    if points:
+        client.upsert(collection_name=collection_name, points=points)
+        print(f"[Qdrant] Upserted {len(points)} chunks to '{collection_name}'")
+
+    return len(points)
+
 
 # =============================================================================
 # UTILITY FUNCTIONS

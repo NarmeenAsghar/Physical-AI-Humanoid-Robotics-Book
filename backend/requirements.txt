@@ -18,11 +18,13 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
 # Vector Store - Qdrant Cloud (Free Tier)
-qdrant-client>=1.7.0
+# Pin version to ensure query_points API compatibility
+qdrant-client==1.12.1
 
 # Embeddings - Sentence Transformers (Free, Local)
-sentence-transformers>=2.3.0
-torch>=2.0.0  # CPU version is fine
+# Pin versions for consistent embeddings across environments
+sentence-transformers==2.7.0
+torch>=2.0.0,<2.5.0  # CPU version, pinned range for stability
 
 # Database - Neon Postgres (Free Tier)
 psycopg[binary]>=3.1.0

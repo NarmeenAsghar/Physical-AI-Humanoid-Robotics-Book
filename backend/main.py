@@ -46,7 +46,10 @@ load_dotenv()
 
 class Settings:
     """Application settings from environment variables."""
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    # CORS: Allow all origins for Hugging Face Spaces deployment
+    # In production, set CORS_ORIGINS env var to specific domains
+    _cors_env = os.getenv("CORS_ORIGINS", "*")
+    CORS_ORIGINS: list = ["*"] if _cors_env == "*" else _cors_env.split(",")
     SESSION_TIMEOUT_MINUTES: int = int(os.getenv("SESSION_TIMEOUT_MINUTES", "30"))
     TOP_K_RESULTS: int = int(os.getenv("TOP_K_RESULTS", "5"))
     SCORE_THRESHOLD: float = float(os.getenv("SCORE_THRESHOLD", "0.2"))
