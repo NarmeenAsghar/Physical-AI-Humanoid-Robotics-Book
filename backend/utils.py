@@ -46,21 +46,32 @@ _embedding_model = None
 def get_qdrant_client() -> QdrantClient:
     global _qdrant_client
     if _qdrant_client is None:
-        # Hamesha Cloud se connect karne ki koshish karein
+        # Always try to connect to Qdrant Cloud
+        print(f"[Qdrant] Attempting to connect to: {QDRANT_URL}")
+        print(f"[Qdrant] API Key present: {bool(QDRANT_API_KEY)}")
+
         try:
-            _qdrant_client = QdrantClient(
+            client = QdrantClient(
                 url=QDRANT_URL,
-                api_key=QDRANT_API_KEY
+                api_key=QDRANT_API_KEY,
+                timeout=30,  # 30 second timeout
             )
-            print(f"[Qdrant] Connected to CLOUD at: {QDRANT_URL}")
+            # Test the connection by listing collections
+            collections = client.get_collections()
+            collection_names = [c.name for c in collections.collections]
+            print(f"[Qdrant] Connected to CLOUD successfully!")
+            print(f"[Qdrant] Available collections: {collection_names}")
+            _qdrant_client = client
         except Exception as e:
             print(f"[Qdrant] Cloud Connection Failed: {e}")
-            # Fallback to local if cloud fails
+            print(f"[Qdrant] ERROR: Cannot connect to Qdrant Cloud. Retrieval will not work!")
+            # DO NOT fallback to local - raise the error so we know there's a problem
+            # Create a local client anyway to prevent crashes, but log the warning
             QDRANT_LOCAL_PATH = "./qdrant_local"
             os.makedirs(QDRANT_LOCAL_PATH, exist_ok=True)
             _qdrant_client = QdrantClient(path=QDRANT_LOCAL_PATH)
-            print(f"[Qdrant] Running in LOCAL mode as fallback")
-    
+            print(f"[Qdrant] WARNING: Using empty LOCAL database as fallback!")
+
     return _qdrant_client
 
 # =============================================================================
