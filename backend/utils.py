@@ -82,7 +82,7 @@ def get_qdrant_client() -> QdrantClient:
 
         if url and api_key:
             # Agar .env mein Cloud details hain toh wahan connect karo
-            _qdrant_client = QdrantClient(url=url, api_key=api_key)
+            _qdrant_client = QdrantClient(url="https://6208a944-b6cd-4e96-b2d4-40e619f896db.europe-west3-0.gcp.cloud.qdrant.io:6333",api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.knVAUbUV-odBQxgqjaEqFaxdLy47uYy5vX3WnfSQOXc")
             print(f"[Qdrant] Connected to CLOUD at: {url}")
         else:
             # Warna purana local mode
