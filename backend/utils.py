@@ -27,13 +27,20 @@ from qdrant_client.models import (
     MatchValue,
 )
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv # <--- Ye line check karein
+from pathlib import Path
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-# Path for local embedded Qdrant storage
-# This directory will be created automatically if it doesn't exist
+# .env file
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path) # <--- Force load .env
+
+# Cloud connection settings (set these in .env or environment variables)
+QDRANT_URL = os.getenv("QDRANT_URL")  # e.g., "https://xyz-example.cloud.qdrant.io:6333"
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") # Aapka cloud API key
 QDRANT_LOCAL_PATH = "./qdrant_local"
 
 # Embedding model configuration
@@ -41,16 +48,11 @@ QDRANT_LOCAL_PATH = "./qdrant_local"
 # It's fast, lightweight, and good for semantic search
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSION = 384
-
+DEFAULT_COLLECTION = "book_chunks"
 # Default collection name for book content
 DEFAULT_COLLECTION = "book_chunks"
-
-# =============================================================================
-# GLOBAL INSTANCES (Lazy Loaded)
-# =============================================================================
-
-_qdrant_client: Optional[QdrantClient] = None
-_embedding_model: Optional[SentenceTransformer] = None
+_qdrant_client = None
+_embedding_model = None
 
 
 # =============================================================================
@@ -74,13 +76,19 @@ def get_qdrant_client() -> QdrantClient:
     global _qdrant_client
 
     if _qdrant_client is None:
-        # Create the storage directory if it doesn't exist
-        os.makedirs(QDRANT_LOCAL_PATH, exist_ok=True)
+        # Cloud settings check
+        url = os.getenv("QDRANT_URL")
+        api_key = os.getenv("QDRANT_API_KEY")
 
-        # Initialize client in embedded mode (local storage)
-        _qdrant_client = QdrantClient(path=QDRANT_LOCAL_PATH)
-        print(f"[Qdrant] Initialized local embedded client at: {QDRANT_LOCAL_PATH}")
-
+        if url and api_key:
+            # Agar .env mein Cloud details hain toh wahan connect karo
+            _qdrant_client = QdrantClient(url=url, api_key=api_key)
+            print(f"[Qdrant] Connected to CLOUD at: {url}")
+        else:
+            # Warna purana local mode
+            os.makedirs(QDRANT_LOCAL_PATH, exist_ok=True)
+            _qdrant_client = QdrantClient(path=QDRANT_LOCAL_PATH)
+            print(f"[Qdrant] Running in LOCAL mode")
     return _qdrant_client
 
 
